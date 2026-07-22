@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"allowSyntheticDefaultImports": true,
+		"declaration": true,
+		"experimentalDecorators": true,
+		"lib": ["dom", "es2021"],
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"target": "es2021",
+		"jsx": "react-jsx",
+		"jsxImportSource": "@stencil/core",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"skipLibCheck": true,
+		"types": ["@stencil/core"],
+		"paths": {
+			"@common/*": ["../../../../src/common/*"]
+		}
+	},
+	"include": ["src", "utils"],
+	"exclude": ["node_modules"]
+}

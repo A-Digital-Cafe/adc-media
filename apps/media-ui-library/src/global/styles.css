@@ -1,0 +1,18 @@
+/**
+ * CSS base de media-ui-library.
+ * Solo reglas que no dependen de Tailwind (las clases utilitarias las genera
+ * el build de cada app consumidora vía @source).
+ */
+
+/* Saltos de página de documentos ADC: visibles en pantalla, reales al imprimir */
+.adc-doc-page-break {
+	break-after: page;
+}
+
+@media print {
+	.adc-doc-page-break {
+		border: none;
+		height: 0;
+		margin: 0;
+	}
+}

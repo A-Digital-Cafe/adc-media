@@ -1,0 +1,9 @@
+{
+	"name": "@adc-platform/media-ui-library",
+	"license": "ISC",
+	"author": "abbytec",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"dependencies": {}
+}

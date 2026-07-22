@@ -1,0 +1,14 @@
+{
+	"uiModule": {
+		"name": "media-ui-library",
+		"uiNamespace": "adc-platform",
+		"framework": "stencil",
+		"outputDir": "dist-ui",
+		"i18n": true,
+		"uiDependencies": ["adc-ui-library"],
+		"exports": {
+			"loader": "./loader",
+			"utils": "./utils"
+		}
+	}
+}
