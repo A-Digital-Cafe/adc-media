@@ -1,0 +1,84 @@
+# Caller fino: delega toda la lógica en el reusable workflow centralizado de
+# A-Digital-Cafe/adc-ci. Copiá este archivo tal cual a `.github/workflows/`
+# de cada repo (root + presets). El reusable se fija por SHA (Sonar exige full
+# commit SHA): al actualizar adc-ci, re-pinear acá y re-distribuir con
+# scripts/distribute-security-ci.sh. El `# main` del trailer indica la rama.
+name: Security
+
+on:
+  # PR aprobado por un mantenedor -> corre en contexto del repo base (seguro ante forks).
+  pull_request_review:
+    types: [submitted]
+  # Escaneo completo + Scorecard, cada 4 días (06:00 UTC) -> report-only + email.
+  # (No corre en push a main: main se cubre vía el PR aprobado + el escaneo periódico.)
+  schedule:
+    - cron: "0 6 */4 * *"
+  # Disparo manual desde la pestaña Actions ("Run workflow"): corre la suite
+  # report-only on-demand. Elegís qué job correr con `only` (ej. solo scorecard)
+  # y, opcionalmente, recibir el resumen por email.
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Qué ejecutar"
+        type: choice
+        options: [all, scorecard, semgrep, osv, trivy]
+        default: all
+      email:
+        description: "Enviar email de resumen"
+        type: boolean
+        default: false
+
+# GitHub valida los permisos del caller contra el MÁXIMO de TODOS los jobs del
+# reusable (ignora los `if`): como el reusable incluye el job `scorecard`, que en
+# repos PRIVADOS necesita actions/checks/issues/pull-requests:read + id-token,
+# TODO job del caller que lo invoque debe conceder ese set. Por eso va a nivel
+# workflow (lo heredan pr/scheduled/manual); el caller solo puede acotar, no
+# ampliar. No sobre-privilegia: cada job del reusable recibe la intersección con
+# lo que realmente pide (semgrep/osv/trivy se quedan en contents:read).
+permissions:
+  contents: read
+  id-token: write # OSSF Scorecard
+  actions: read # Scorecard (repos privados)
+  checks: read # Scorecard (repos privados)
+  issues: read # Scorecard (repos privados)
+  pull-requests: read # Scorecard (repos privados)
+
+jobs:
+  pr:
+    if: ${{ github.event_name == 'pull_request_review' && github.event.review.state == 'approved' }}
+    uses: A-Digital-Cafe/adc-ci/.github/workflows/security-suite.yml@7c9eeeb8570b498540076c598d8678be5f4a9435 # main
+    with:
+      mode: pr
+
+  # Solo el modo weekly manda mail: pasamos únicamente los secrets SMTP requeridos
+  # (no `secrets: inherit`). Si no están definidos en la org, llegan vacíos y el
+  # reusable omite el email.
+  scheduled:
+    if: ${{ github.event_name == 'schedule' }}
+    uses: A-Digital-Cafe/adc-ci/.github/workflows/security-suite.yml@7c9eeeb8570b498540076c598d8678be5f4a9435 # main
+    with:
+      mode: weekly
+      email: true
+    secrets:
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SECURITY_REPORT_TO: ${{ secrets.SECURITY_REPORT_TO }}
+
+  # Disparo manual: report-only (mode weekly, sin gate) corriendo el job elegido
+  # en `only`. El cap amplio de permisos no eleva privilegios (el reusable consume
+  # por job solo lo que pide).
+  manual:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: A-Digital-Cafe/adc-ci/.github/workflows/security-suite.yml@7c9eeeb8570b498540076c598d8678be5f4a9435 # main
+    with:
+      mode: weekly
+      only: ${{ inputs.only }}
+      email: ${{ inputs.email }}
+    secrets:
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SECURITY_REPORT_TO: ${{ secrets.SECURITY_REPORT_TO }}
