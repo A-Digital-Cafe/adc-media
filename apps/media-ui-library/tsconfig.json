@@ -14,7 +14,8 @@
 		"skipLibCheck": true,
 		"types": ["@stencil/core"],
 		"paths": {
-			"@common/*": ["../../../../src/common/*"]
+			"@common/*": ["../../../../src/common/*"],
+			"@apps/*": ["../../../../src/apps/*"]
 		}
 	},
 	"include": ["src", "utils"],

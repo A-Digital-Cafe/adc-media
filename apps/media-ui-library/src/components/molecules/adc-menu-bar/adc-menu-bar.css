@@ -1,0 +1,43 @@
+/**
+ * Barra de menús compartida de los editores. Además del componente, define el
+ * contenedor `.adc-editor-toolbar` que usan los toolbars de ambos editores
+ * (documentos y hojas de cálculo): misma barra, mismos botones.
+ */
+
+adc-menu-bar {
+	display: contents;
+}
+
+/* Barra de editor: fija a la pantalla (arriba del lienzo), no scrollea con el
+   contenido. Los hosts le suman título, paginador o estadísticas alrededor. */
+.adc-editor-toolbar {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.35rem 0.75rem;
+	background: var(--c-background, #fff);
+	border-bottom: 1px solid var(--c-alt, rgba(0, 0, 0, 0.12));
+}
+
+.adc-menu-bar__btn {
+	background: transparent;
+	border: none;
+	border-radius: 0.25rem;
+	color: var(--c-text, inherit);
+	cursor: pointer;
+	font-size: 0.875rem;
+	padding: 0.2rem 0.5rem;
+}
+
+.adc-menu-bar__btn:hover:not(:disabled) {
+	background: var(--c-surface, rgba(0, 0, 0, 0.08));
+}
+
+.adc-menu-bar__btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}

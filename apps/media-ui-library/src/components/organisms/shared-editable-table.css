@@ -1,0 +1,56 @@
+/**
+ * Tabla editable compartida: la usan `adc-blocks-editor` (tablas embebidas
+ * en documentos) y `adc-sheet-editor`. Inyectada por ambos componentes via
+ * styleUrls (shadow:false): mismo look en cualquier app.
+ */
+
+.adc-blocks-editor__table-wrap {
+	overflow-x: auto;
+}
+
+.adc-blocks-editor__table {
+	border-collapse: collapse;
+	width: 100%;
+	font-size: 0.9em;
+}
+
+.adc-blocks-editor__table-cell {
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.25));
+	padding: 0.25rem 0.5rem;
+	min-width: 4rem;
+	text-align: left;
+	vertical-align: top;
+	outline: none;
+	user-select: text;
+}
+
+.adc-blocks-editor__table-cell:focus {
+	box-shadow: inset 0 0 0 1px var(--c-primary, #4a90e2);
+}
+
+.adc-blocks-editor__table thead .adc-blocks-editor__table-cell {
+	font-weight: 600;
+	background: var(--c-alt, rgba(0, 0, 0, 0.08));
+}
+
+.adc-blocks-editor__table-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+	margin-top: 0.35rem;
+}
+
+.adc-blocks-editor__table-action {
+	background: transparent;
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.18));
+	border-radius: 0.25rem;
+	color: var(--c-muted, #888);
+	cursor: pointer;
+	font-size: 0.7rem;
+	padding: 0.1rem 0.4rem;
+}
+
+.adc-blocks-editor__table-action:hover {
+	color: var(--c-text, inherit);
+	background: var(--c-alt, rgba(0, 0, 0, 0.1));
+}

@@ -1,0 +1,143 @@
+/**
+ * Grilla estilo hoja de cálculo: columnas de ancho fijo (el ancho total crece
+ * con cada columna y el viewport scrollea en ambos ejes, como Excel/Sheets),
+ * rótulos A/B/C pegajosos arriba, números de fila pegajosos a la izquierda y
+ * barra de celda (futura barra de fórmulas) bajo la barra de menús.
+ */
+
+/* Único contenedor con scroll: los rótulos sticky se anclan acá. */
+.adc-sheet-editor__viewport {
+	overflow: auto;
+}
+
+/* La tabla crece con sus columnas en vez de comprimirlas: el viewport scrollea.
+   Doble clase: gana sobre el width:100% de la tabla compartida sin depender
+   del orden de inyección de los stylesheets (ambos componentes la cargan). */
+.adc-blocks-editor__table.adc-sheet-editor__table {
+	width: max-content;
+	min-width: 100%;
+	table-layout: fixed;
+}
+
+/* Con table-layout fixed el ancho lo dicta la primera fila: los rótulos A/B/C. */
+.adc-sheet-editor__table .adc-sheet-editor__head:not(.adc-sheet-editor__rowhead) {
+	width: 11rem;
+	min-width: 11rem;
+	max-width: 11rem;
+}
+
+.adc-sheet-editor__table .adc-blocks-editor__table-cell {
+	width: 11rem;
+	min-width: 11rem;
+	max-width: 11rem;
+	overflow: hidden;
+}
+
+/* Primera fila de datos: cabecera de la tabla. */
+.adc-sheet-editor__headrow .adc-blocks-editor__table-cell {
+	font-weight: 600;
+	background: var(--c-alt, rgba(0, 0, 0, 0.08));
+}
+
+/* Rótulos de hoja de cálculo (letras de columna / números de fila).
+   Con border-collapse los bordes de los sticky se pierden al scrollear: se
+   redibujan como sombras internas. */
+.adc-sheet-editor__head {
+	position: relative;
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.25));
+	background: var(--c-surface, rgba(0, 0, 0, 0.06));
+	color: var(--c-muted, #888);
+	font-size: 0.7rem;
+	font-weight: 600;
+	padding: 0.25rem 1.1rem 0.25rem 0.5rem;
+	text-align: center;
+	user-select: none;
+	white-space: nowrap;
+	box-shadow:
+		inset -1px 0 0 var(--c-alt, rgba(0, 0, 0, 0.25)),
+		inset 0 -1px 0 var(--c-alt, rgba(0, 0, 0, 0.25));
+}
+
+/* Letras de columna fijas al scrollear verticalmente. */
+.adc-sheet-editor__table thead .adc-sheet-editor__head {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+}
+
+/* Números de fila fijos al scrollear horizontalmente. */
+.adc-sheet-editor__rowhead {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	width: 2.75rem;
+	min-width: 2.75rem;
+	max-width: 2.75rem;
+}
+
+/* Esquina (intersección de ambos rótulos): pegajosa en los dos ejes. */
+.adc-sheet-editor__table thead .adc-sheet-editor__rowhead {
+	z-index: 4;
+}
+
+/* Botón de borrar fila/columna: visible al pasar por el rótulo. */
+.adc-sheet-editor__kill {
+	position: absolute;
+	top: 50%;
+	right: 2px;
+	transform: translateY(-50%);
+	background: var(--c-background, #fff);
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.18));
+	border-radius: 0.25rem;
+	color: var(--c-tdanger, #c0392b);
+	cursor: pointer;
+	font-size: 0.7rem;
+	line-height: 1;
+	padding: 0.05rem 0.3rem;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+
+.adc-sheet-editor__head:hover .adc-sheet-editor__kill,
+.adc-sheet-editor__head:focus-within .adc-sheet-editor__kill {
+	opacity: 1;
+}
+
+/* ── Barra de celda (referencia + valor; futura barra de fórmulas) ────────── */
+
+.adc-sheet-editor__cellbar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.75rem;
+	background: var(--c-background, #fff);
+	border-bottom: 1px solid var(--c-alt, rgba(0, 0, 0, 0.12));
+}
+
+.adc-sheet-editor__cellref {
+	min-width: 3rem;
+	padding: 0.1rem 0.4rem;
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.15));
+	border-radius: 0.25rem;
+	background: var(--c-surface, rgba(0, 0, 0, 0.06));
+	color: var(--c-muted, #888);
+	font-family: ui-monospace, monospace;
+	font-size: 0.75rem;
+	text-align: center;
+	user-select: none;
+}
+
+.adc-sheet-editor__cellinput {
+	flex: 1;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--c-text, inherit);
+	font-size: 0.85rem;
+	padding: 0.15rem 0.25rem;
+	border-radius: 0.25rem;
+}
+
+.adc-sheet-editor__cellinput:focus {
+	background: var(--c-surface, rgba(0, 0, 0, 0.06));
+}

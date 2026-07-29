@@ -1,0 +1,137 @@
+/**
+ * Editor de documentos: barras, esquema y "papel" (hojas con márgenes).
+ * Las hojas son una capa de fondo posicionada por la paginación medida en JS;
+ * el texto es un único flujo continuo que se apoya encima.
+ */
+
+/* La base de la barra (`.adc-editor-toolbar`) vive en adc-menu-bar.css: es la
+   misma barra que usa el editor de hojas de cálculo. */
+.adc-doc__toolbar--title {
+	border-bottom: none;
+	padding-bottom: 0;
+}
+
+.adc-doc__title {
+	flex: 1 1 12rem;
+	min-width: 8rem;
+	background: transparent;
+	border: none;
+	outline: none;
+	color: var(--c-text, inherit);
+	font-size: 1.05rem;
+	font-weight: 700;
+	padding: 0.15rem 0.25rem;
+	border-radius: 0.25rem;
+}
+
+.adc-doc__title:focus {
+	background: var(--c-surface, rgba(0, 0, 0, 0.06));
+}
+
+.adc-doc__select {
+	background: var(--c-surface, #fff);
+	color: var(--c-text, inherit);
+	border: 1px solid var(--c-alt, rgba(0, 0, 0, 0.15));
+	border-radius: 0.25rem;
+	font-size: 0.75rem;
+	padding: 0.1rem 0.3rem;
+}
+
+.adc-doc__sep {
+	width: 1px;
+	height: 1.25rem;
+	background: var(--c-alt, rgba(0, 0, 0, 0.15));
+}
+
+/* ── Esquema ─────────────────────────────────────────────────────────────── */
+
+.adc-doc__outline {
+	width: 14rem;
+	flex-shrink: 0;
+	overflow-y: auto;
+	border-right: 1px solid var(--c-alt, rgba(0, 0, 0, 0.12));
+	padding: 0.75rem 0.5rem;
+	font-size: 0.875rem;
+}
+
+.adc-doc__outline-item {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	width: 100%;
+	background: transparent;
+	border: none;
+	border-radius: 0.25rem;
+	color: var(--c-text, inherit);
+	cursor: pointer;
+	padding: 0.25rem 0.5rem;
+	text-align: left;
+}
+
+.adc-doc__outline-item:hover {
+	background: var(--c-surface, rgba(0, 0, 0, 0.08));
+}
+
+/* ── Lienzo y hojas ──────────────────────────────────────────────────────── */
+
+.adc-doc__canvas {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* En vistas paginadas el fondo hace de escritorio y el papel resalta encima.
+   El velo oscuro funciona con cualquier tema (no depende de sus tokens). */
+.adc-doc__canvas--paged {
+	background: rgba(0, 0, 0, 0.35);
+	padding: 1rem 0.5rem 2rem;
+}
+
+.adc-doc__sheet-stack {
+	position: relative;
+	width: 100%;
+	max-width: 52rem;
+	margin: 0 auto;
+}
+
+.adc-doc__sheets {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.adc-doc__sheet {
+	position: absolute;
+	left: 0;
+	right: 0;
+	background: var(--c-background, #fff);
+	border: 1px solid rgba(128, 128, 128, 0.35);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.adc-doc__content {
+	position: relative;
+	z-index: 1;
+}
+
+/* Márgenes de página: padding del flujo editable (la barra de formato queda
+   fuera, anclada a la pantalla). Sin variables (vista continua) se conserva el
+   padding por defecto del editor. */
+.adc-doc__content .adc-blocks-editor__input {
+	padding-left: var(--doc-margin-left, 0.75rem);
+	padding-right: var(--doc-margin-right, 0.75rem);
+	padding-top: var(--doc-margin-top, 0.5rem);
+}
+
+/* ── Configuración de página (contenido del adc-modal) ───────────────────── */
+
+.adc-doc__panel-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.adc-doc__panel-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.35rem;
+}

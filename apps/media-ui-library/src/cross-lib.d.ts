@@ -12,8 +12,10 @@ declare module "@stencil/core" {
 			"adc-button": CrossLibProps;
 			"adc-callout": CrossLibProps;
 			"adc-checkbox": CrossLibProps;
+			"adc-context-menu": CrossLibProps;
 			"adc-divider": CrossLibProps;
 			"adc-input": CrossLibProps;
+			"adc-modal": CrossLibProps;
 			"adc-quote": CrossLibProps;
 			"adc-select": CrossLibProps;
 			"adc-skeleton": CrossLibProps;
