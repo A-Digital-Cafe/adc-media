@@ -24,7 +24,6 @@ export class CppHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Functions
 		const functionRegex = /\b(main|printf|scanf|cout|cin|endl|malloc|free|strlen|strcpy|strcmp|sizeof)\b(?=\s*\()/g;
 		escaped = escaped.replaceAll(functionRegex, (_, func) => {
 			const placeholder = `__FUNC_${placeholderIndex++}__`;
@@ -32,7 +31,6 @@ export class CppHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Keywords
 		const keywordRegexA = /\b(auto|break|case|catch|class|const|continue|default|delete|do|else|enum|explicit|extern)\b/g;
 		const keywordRegexB = /\b(false|for|friend|goto|if|inline|mutable|namespace|new|nullptr|operator|private)\b/g;
 		const keywordRegexC = /\b(protected|public|register|return|sizeof|static|struct|switch|template|this|throw)\b/g;
@@ -54,7 +52,6 @@ export class CppHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Preprocessor
 		const preprocessorRegex = /^#include\b|^#define\b/gm;
 		escaped = escaped.replaceAll(preprocessorRegex, (match) => {
 			const placeholder = `__PREPROC_${placeholderIndex++}__`;
@@ -62,7 +59,6 @@ export class CppHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Operators
 		const operatorRegex = /(&lt;&lt;|&gt;&gt;|::)/g;
 		escaped = escaped.replaceAll(operatorRegex, (match) => {
 			const placeholder = `__OP_${placeholderIndex++}__`;
@@ -70,7 +66,6 @@ export class CppHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Restore placeholders
 		for (const [placeholder, html] of replacements) {
 			escaped = escaped.replace(placeholder, () => html);
 		}

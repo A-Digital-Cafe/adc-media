@@ -23,7 +23,6 @@ export class JavaHighlighter implements HighlighterStrategy {
 			});
 		});
 
-		// Comments
 		const lineCommentRegex = /\/\/[^\n]*/g;
 		const blockCommentRegex = /\/\*[\s\S]*?\*\//g;
 		const neutralizeInsideComment = (text: string): string => text.replaceAll(/__STR_\d+__/g, (ph) => rawByPlaceholder.get(ph) ?? ph);
@@ -47,7 +46,6 @@ export class JavaHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Functions
 		const functionRegex = /\b(?!if\b|else\b|for\b|while\b|do\b|switch\b|catch\b|new\b|__)([A-Za-z_]\w*)\s*(?=\()/g;
 		escaped = escaped.replaceAll(functionRegex, (_, func) => {
 			const placeholder = `__FUNC_${placeholderIndex++}__`;
@@ -55,7 +53,6 @@ export class JavaHighlighter implements HighlighterStrategy {
 			return placeholder;
 		});
 
-		// Keywords
 		const keywordRegexA = /\b(public|private|protected|class|static|final|void|abstract|interface)\b/g;
 		const keywordRegexB = /\b(if|else|for|while|do|switch|case|break|continue|default)\b/g;
 		const keywordRegexC = /\b(try|catch|finally|throw|throws|return|new|import|package|extends|implements)\b/g;

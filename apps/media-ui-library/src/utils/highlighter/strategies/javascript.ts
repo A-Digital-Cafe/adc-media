@@ -49,7 +49,6 @@ export function highlightJSFamily(
 		});
 	});
 
-	// Comments (line and block)
 	const lineCommentRegex = /\/\/[^\n]*/g;
 	const blockCommentRegex = /\/\*[\s\S]*?\*\//g;
 	const neutralizeInsideComment = (text: string): string =>
