@@ -7,8 +7,14 @@ Sin puerto propio: la compila y sirve el kernel (UIFederationService).
 **Componentes**: `adc-media-viewer` (imagen/video/audio), `adc-pdf-viewer` (nativo),
 `adc-sheet-editor` (hoja de cálculo para `.csv` y `.adcsheet` —JSON Lines con
 celdas extensibles por propiedades, ver `@common/types/adc-sheet`—: rótulos A/B/C
-y números de fila pegajosos, scroll en ambos ejes, barra de celda, undo/redo con
-delimitador, export csv/fods/adcsheet/md/html vía `utils/adcsheet`),
+y números de fila pegajosos, scroll en ambos ejes, barra de fórmulas, pines `+`
+al pasar por los bordes de un rótulo para insertar fila/columna ahí, undo/redo con
+delimitador, export/impresión desde el registro `utils/sheet-formats`
+—csv/fods/adcsheet/md/html + Ctrl+P—; **fórmulas** `=` evaluadas en el cliente por
+`utils/sheet-formula` —agregación, matemáticas, texto, lógica, búsqueda, fechas y
+funciones tipo SQL que derraman filas (`FILTER`, `SORT`, `UNIQUE`, `GROUPBY`,
+`LIMIT`)—, con los valores calculados en la caché del host vía
+`calcCache`/`adcSheetCalc` y nunca dentro del archivo),
 `adc-menu-bar` (barra de menús compartida de ambos editores + `.adc-editor-toolbar`),
 `adc-document-editor`/`adc-document-renderer` (`.adcdoc`: un único
 `adc-blocks-editor` con tablas, saltos de página y bloques con margen embebidos;

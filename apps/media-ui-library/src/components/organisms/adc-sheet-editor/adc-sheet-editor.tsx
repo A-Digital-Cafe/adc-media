@@ -1,12 +1,14 @@
 import { Component, Event, Host, Listen, Prop, State, Watch, type EventEmitter } from "@stencil/core";
 // Solo tipos desde @common (un import de runtime haría que Stencil emita .js junto a la fuente compartida).
-import type { AdcDocument } from "@common/types/adc-document/index.js";
 import type { AdcSheetEnvelope, SheetCell } from "@common/types/adc-sheet/index.js";
 import type { MenuBarItem, MenuBarMenu } from "../../molecules/adc-menu-bar/adc-menu-bar";
 import { parseCsv, serializeCsv, type CsvDelimiter } from "../../../../utils/csv.js";
-import { cellText, parseAdcSheet, serializeAdcSheet, sheetToFods, withCellText } from "../../../../utils/adcsheet.js";
-import { docToHtml, docToMarkdown } from "../../../../utils/doc-export.js";
-import { downloadText } from "../../../../utils/document-formats.js";
+import { cellText, parseAdcSheet, serializeAdcSheet, withCellText } from "../../../../utils/adcsheet.js";
+import { SHEET_EXPORT_FORMATS, type SheetExportContext } from "../../../../utils/sheet-formats.js";
+import { downloadText, printHtml } from "../../../../utils/document-formats.js";
+import { computeSheet, gridHash, isFormula, type CalcCacheEntry, type ComputedCell } from "../../../../utils/sheet-formula/engine.js";
+import { FUNCTION_DOMAINS } from "../../../../utils/sheet-formula/functions/index.js";
+import { cellKey, columnLetter } from "../../../../utils/sheet-formula/refs.js";
 
 /** Formato del contenido que recibe/emite el editor. */
 export type SheetFormat = "csv" | "adcsheet";
@@ -31,37 +33,29 @@ const DELIMITER_LABELS: Array<{ value: CsvDelimiter; label: string }> = [
 	{ value: "\t", label: "Tabulación" },
 ];
 
-/** Espejo del mime de @common/types/adc-sheet (acá solo se importan tipos). */
-const SHEET_FILE_MIME = "application/x-adc-sheet";
-
 /** Máximo de estados guardados para deshacer/rehacer. */
 const HISTORY_LIMIT = 60;
 /** Espera antes de fotografiar la grilla en el historial (agrupa el tecleo). */
 const HISTORY_DEBOUNCE_MS = 700;
-
-/** Rótulo de columna estilo hoja de cálculo (A, B, …, Z, AA, AB, …). */
-function columnLetter(index: number): string {
-	let label = "";
-	let i = index + 1;
-	while (i > 0) {
-		i -= 1;
-		label = String.fromCodePoint(65 + (i % 26)) + label;
-		i = Math.floor(i / 26);
-	}
-	return label;
-}
+/** Espera antes de recalcular las fórmulas (para no evaluar la hoja en cada tecla). */
+const COMPUTE_DEBOUNCE_MS = 250;
 
 /**
  * Editor de hojas de cálculo con la misma barra que el editor de documentos
- * (`adc-menu-bar`: Archivo / Editar / Insertar, fija arriba de todo) y una
- * grilla estilo Excel: columnas de ancho fijo con scroll horizontal, rótulos
- * A/B/C y números de fila pegajosos, barra de celda (futura barra de fórmulas)
- * y deshacer-rehacer.
+ * (`adc-menu-bar`: Archivo / Editar / Insertar / Funciones, fija arriba de
+ * todo) y una grilla estilo Excel: columnas de ancho fijo con scroll
+ * horizontal, rótulos A/B/C y números de fila pegajosos, barra de fórmulas y
+ * deshacer-rehacer.
  *
  * Edita dos formatos: CSV crudo (RFC 4180) y `.adcsheet` (JSON Lines con
  * celdas extensibles por propiedades — color, fórmula — que se conservan al
  * editar). Emite `adcSheetChange` con el contenido serializado en el formato
  * activo; el guardado es responsabilidad del host.
+ *
+ * **Fórmulas**: una celda que empieza con `=` se calcula en el cliente y se
+ * muestra ya resuelta (el texto crudo vuelve mientras se la edita). El archivo
+ * guarda **sólo la fórmula**: los valores calculados viven en la caché que el
+ * host persiste vía `calcCache`/`adcSheetCalc`, así el archivo no engorda.
  *
  * @example
  * <adc-sheet-editor value={"a,b\n1,2"} format="csv" onadcSheetChange={(e) => save(e.detail.text)} />
@@ -91,10 +85,23 @@ export class AdcSheetEditor {
 	 */
 	@Prop() fill = false;
 
+	/**
+	 * Caché de cálculos que el host trae del servidor, en JSON
+	 * (`{docHash, entries}`). Si el hash coincide con el contenido actual, la
+	 * hoja se pinta sin evaluar una sola fórmula. Viaja como string y no como
+	 * objeto para que un literal nuevo en cada render del host no dispare un
+	 * recálculo.
+	 */
+	@Prop() calcCache?: string;
+
 	@State() rows: SheetCell[][] = [[""]];
 	@State() menu: OpenMenu | null = null;
-	/** Última celda con foco: ancla de inserciones relativas y de la barra de celda. */
+	/** Última celda con foco: ancla de inserciones relativas y de la barra de fórmulas. */
 	@State() active: { r: number; c: number } | null = null;
+	/** Celda que se está tecleando: muestra la fórmula cruda en vez del resultado. */
+	@State() editing: { r: number; c: number } | null = null;
+	/** Resultado del último cálculo, por celda (`"fila:columna"`). */
+	@State() computed: Map<string, ComputedCell> = new Map();
 
 	/** Props extra por fila (paralelo a `rows`): se conservan, hoy no se editan. */
 	private rowMeta: Array<Record<string, unknown> | undefined> = [];
@@ -102,20 +109,35 @@ export class AdcSheetEditor {
 	private envelope: AdcSheetEnvelope = { format: "adc-sheet", version: 1 };
 	private activeDelimiter: CsvDelimiter = ",";
 	private fileInput?: HTMLInputElement;
+	private cellBarInput?: HTMLInputElement;
 	/** Historial de deshacer/rehacer (el delimitador también es deshacible). */
 	private past: SheetSnapshot[] = [];
 	private future: SheetSnapshot[] = [];
 	private historyTimer?: ReturnType<typeof setTimeout>;
+	private computeTimer?: ReturnType<typeof setTimeout>;
+	/** Caché vigente: la del servidor al abrir, la del último cálculo después. */
+	private calc: { docHash: string; entries: CalcCacheEntry[] } | null = null;
+	/** Última caché emitida: evita avisarle al host de un cambio que no existe. */
+	private emittedCalc = "";
 
 	/** Emitido en cada edición con el contenido serializado en el formato activo. */
 	@Event() adcSheetChange!: EventEmitter<{ text: string }>;
 
+	/**
+	 * Emitido cuando cambian los valores calculados. El host lo persiste (con su
+	 * propio debounce) para que la próxima apertura pinte la hoja sin recalcular.
+	 */
+	@Event() adcSheetCalc!: EventEmitter<{ cache: string }>;
+
 	componentWillLoad(): void {
 		this.parseValue();
+		this.calc = this.parseCalcCache();
+		this.recompute();
 	}
 
 	disconnectedCallback(): void {
 		if (this.historyTimer) clearTimeout(this.historyTimer);
+		if (this.computeTimer) clearTimeout(this.computeTimer);
 	}
 
 	@Watch("value")
@@ -125,6 +147,33 @@ export class AdcSheetEditor {
 		this.closeHistoryGroup();
 		this.past = [];
 		this.future = [];
+		this.scheduleCompute(true);
+	}
+
+	/**
+	 * El host suele traer la caché antes de montar el editor (y entonces ya la usó
+	 * `componentWillLoad`). Esto cubre el caso de que llegue después: sólo se
+	 * adopta si describe el contenido que hay ahora — una caché de otra versión no
+	 * ahorra nada y forzaría un recálculo de más.
+	 */
+	@Watch("calcCache")
+	handleCalcCacheChange(): void {
+		const incoming = this.parseCalcCache();
+		if (!incoming || incoming.docHash === this.calc?.docHash) return;
+		if (incoming.docHash !== gridHash(this.textGrid())) return;
+		this.calc = incoming;
+		this.scheduleCompute(true);
+	}
+
+	private parseCalcCache(): { docHash: string; entries: CalcCacheEntry[] } | null {
+		if (!this.calcCache) return null;
+		try {
+			const parsed = JSON.parse(this.calcCache) as { docHash?: unknown; entries?: unknown };
+			if (typeof parsed?.docHash !== "string" || !Array.isArray(parsed.entries)) return null;
+			return { docHash: parsed.docHash, entries: parsed.entries as CalcCacheEntry[] };
+		} catch {
+			return null;
+		}
 	}
 
 	private parseValue(): void {
@@ -153,9 +202,19 @@ export class AdcSheetEditor {
 		return rows.map((row) => (row.length === cols ? row : [...row, ...Array.from({ length: cols - row.length }, () => "")]));
 	}
 
-	/** Grilla de solo texto (para CSV y exportaciones sin propiedades). */
+	/** Grilla de solo texto: lo que el usuario escribió, fórmulas incluidas. */
 	private textGrid(): string[][] {
 		return this.rows.map((row) => row.map(cellText));
+	}
+
+	/**
+	 * Grilla como se ve: los valores calculados en lugar de las fórmulas. Es la
+	 * que se exporta e imprime — un `.csv` que sale con `=SUM(...)` adentro no le
+	 * sirve a nadie.
+	 */
+	private displayGrid(): string[][] {
+		if (this.computed.size === 0) return this.textGrid();
+		return this.rows.map((row, r) => row.map((cell, c) => this.computed.get(cellKey(r, c))?.text ?? cellText(cell)));
 	}
 
 	private serialize(): string {
@@ -167,6 +226,37 @@ export class AdcSheetEditor {
 
 	private emitChange(): void {
 		this.adcSheetChange.emit({ text: this.serialize() });
+		this.scheduleCompute();
+	}
+
+	// ── Cálculo de fórmulas ─────────────────────────────────────────────────
+
+	/**
+	 * Recalcula con debounce: escribir en una celda no puede disparar una
+	 * evaluación de la hoja entera por cada tecla.
+	 */
+	private scheduleCompute(immediate = false): void {
+		if (this.computeTimer) clearTimeout(this.computeTimer);
+		if (immediate) {
+			this.computeTimer = undefined;
+			this.recompute();
+			return;
+		}
+		this.computeTimer = setTimeout(() => {
+			this.computeTimer = undefined;
+			this.recompute();
+		}, COMPUTE_DEBOUNCE_MS);
+	}
+
+	private recompute(): void {
+		const result = computeSheet(this.textGrid(), { cache: this.calc ?? undefined });
+		this.computed = result.cells;
+		this.calc = { docHash: result.docHash, entries: result.entries };
+		// Sin fórmulas no hay nada que cachear: no se le manda una caché vacía al servidor.
+		const payload = result.entries.length > 0 ? JSON.stringify(this.calc) : "";
+		if (payload === this.emittedCalc) return;
+		this.emittedCalc = payload;
+		this.adcSheetCalc.emit({ cache: payload });
 	}
 
 	private snapshot(): SheetSnapshot {
@@ -279,36 +369,38 @@ export class AdcSheetEditor {
 		});
 	}
 
-	/** Documento ADC con la tabla actual (sin re-parsear el CSV: no hay redetección). */
-	private tableDoc(): AdcDocument {
-		const [header = [], ...body] = this.textGrid();
-		return { format: "adc-document", version: 1, blocks: [{ type: "table-x", header, rows: body }] };
-	}
-
 	/** Nombre base de las descargas: el título de la hoja o "tabla". */
 	private baseName(): string {
 		return (typeof this.envelope.title === "string" && this.envelope.title.trim()) || "tabla";
 	}
 
-	private exportAs(format: string): void {
-		const base = this.baseName();
-		switch (format) {
-			case "csv":
-				downloadText(serializeCsv(this.textGrid(), this.activeDelimiter), `${base}.csv`, "text/csv");
-				break;
-			case "fods":
-				downloadText(sheetToFods(this.rows, base), `${base}.fods`, "application/vnd.oasis.opendocument.spreadsheet");
-				break;
-			case "adcsheet":
-				downloadText(serializeAdcSheet({ envelope: this.envelope, rows: this.rows, rowProps: this.rowMeta }), `${base}.adcsheet`, SHEET_FILE_MIME);
-				break;
-			case "md":
-				downloadText(docToMarkdown(this.tableDoc()), `${base}.md`, "text/markdown");
-				break;
-			case "html":
-				downloadText(docToHtml(this.tableDoc()), `${base}.html`, "text/html");
-				break;
-		}
+	private exportContext(): SheetExportContext {
+		return {
+			display: this.displayGrid(),
+			rows: this.rows,
+			rowProps: this.rowMeta,
+			envelope: this.envelope,
+			delimiter: this.activeDelimiter,
+			title: this.baseName(),
+		};
+	}
+
+	/**
+	 * Formatos del submenú "Exportar". Imprimir queda afuera (tiene su propio item
+	 * arriba) y el `.adcsheet` sólo aparece desde un CSV, como puente al formato
+	 * nativo — ofrecerlo mientras se edita un `.adcsheet` sería bajar el archivo
+	 * que ya se está editando.
+	 */
+	private availableExports() {
+		return SHEET_EXPORT_FORMATS.filter((format) => !format.print && (format.id !== "adcsheet" || this.format === "csv"));
+	}
+
+	private exportAs(id: string): void {
+		const format = SHEET_EXPORT_FORMATS.find((candidate) => candidate.id === id);
+		if (!format) return;
+		const content = format.serialize(this.exportContext());
+		if (format.print) printHtml(content);
+		else downloadText(content, `${this.baseName()}.${format.ext}`, format.mime);
 	}
 
 	private setDelimiter(delimiter: CsvDelimiter): void {
@@ -321,17 +413,10 @@ export class AdcSheetEditor {
 	// ── Menús ───────────────────────────────────────────────────────────────
 
 	private fileMenuItems(): MenuBarItem[] {
-		const exportChildren: MenuBarItem[] = [
-			{ label: "CSV (.csv)", action: "export:csv" },
-			{ label: "Planilla OpenDocument (.fods)", action: "export:fods" },
-			// Puente entre formatos: desde CSV se puede bajar la versión `.adcsheet`.
-			...(this.format === "csv" ? [{ label: "Hoja de cálculo ADC (.adcsheet)", action: "export:adcsheet" }] : []),
-			{ label: "Tabla Markdown (.md)", action: "export:md" },
-			{ label: "Página web (.html)", action: "export:html" },
-		];
 		return [
 			{ label: "Importar archivo…", action: "file:import" },
-			{ label: "Exportar…", children: exportChildren },
+			{ label: "Imprimir… (Ctrl+P)", action: "export:print" },
+			{ label: "Exportar…", children: this.availableExports().map((f) => ({ label: f.label, action: `export:${f.id}` })) },
 			...(this.format === "csv"
 				? [
 						{
@@ -376,11 +461,20 @@ export class AdcSheetEditor {
 		];
 	}
 
+	/** Catálogo de funciones agrupado por dominio; cada item la escribe en la celda. */
+	private functionMenuItems(): MenuBarItem[] {
+		return FUNCTION_DOMAINS.map((domain) => ({
+			label: domain.label,
+			children: domain.functions.map((fn) => ({ label: fn.help, action: `fn:${fn.name}` })),
+		}));
+	}
+
 	private barMenus(): MenuBarMenu[] {
 		return [
 			{ label: "Archivo", items: () => this.fileMenuItems() },
 			{ label: "Editar", items: () => this.editMenuItems() },
 			{ label: "Insertar", items: () => this.insertMenuItems() },
+			{ label: "Funciones", items: () => this.functionMenuItems() },
 		];
 	}
 
@@ -418,6 +512,9 @@ export class AdcSheetEditor {
 			case "export":
 				this.exportAs(value);
 				break;
+			case "fn":
+				this.insertFunction(value);
+				break;
 			case "file":
 				if (value === "import") this.fileInput?.click();
 				break;
@@ -425,6 +522,23 @@ export class AdcSheetEditor {
 				this.setDelimiter(value === "tab" ? "\t" : (value as CsvDelimiter));
 				break;
 		}
+	}
+
+	/**
+	 * Escribe `=NOMBRE(` en la celda activa y deja el cursor en la barra de
+	 * fórmulas para completar los argumentos.
+	 */
+	private insertFunction(name: string): void {
+		const cell = this.active;
+		if (!cell || this.readonly) return;
+		const current = cellText(this.rows[cell.r]?.[cell.c] ?? "");
+		this.setCell(cell.r, cell.c, current.startsWith("=") ? `${current}${name}(` : `=${name}(`);
+		this.editing = { ...cell };
+		requestAnimationFrame(() => {
+			this.cellBarInput?.focus();
+			const end = this.cellBarInput?.value.length ?? 0;
+			this.cellBarInput?.setSelectionRange(end, end);
+		});
 	}
 
 	private runInsertAction(value: string): void {
@@ -461,11 +575,22 @@ export class AdcSheetEditor {
 		else if (value === "del-col" && cell) this.removeColumn(cell.c);
 	}
 
-	/** Ctrl/Cmd+Z / Ctrl/Cmd+Y (o Shift+Z): deshacer/rehacer desde cualquier celda. */
-	@Listen("keydown")
+	/**
+	 * Ctrl/Cmd+Z / Ctrl/Cmd+Y (o Shift+Z) para deshacer/rehacer y Ctrl/Cmd+P
+	 * para imprimir. El de imprimir escucha en el documento y no en el host:
+	 * si no, el navegador imprimiría la aplicación entera cada vez que el foco
+	 * está fuera de la grilla (por ejemplo en el botón de guardar del host).
+	 */
+	@Listen("keydown", { target: "document" })
 	handleKeyDown(ev: KeyboardEvent) {
-		if (this.readonly || !(ev.ctrlKey || ev.metaKey)) return;
+		if (!(ev.ctrlKey || ev.metaKey)) return;
 		const key = ev.key.toLowerCase();
+		if (key === "p") {
+			ev.preventDefault();
+			this.exportAs("print");
+			return;
+		}
+		if (this.readonly) return;
 		const redo = key === "y" || (key === "z" && ev.shiftKey);
 		if (redo) {
 			ev.preventDefault();
@@ -517,10 +642,11 @@ export class AdcSheetEditor {
 		);
 	}
 
-	/** Barra de celda (referencia + valor): el lugar de las futuras fórmulas. */
+	/** Barra de fórmulas: referencia, contenido crudo y resultado de la celda activa. */
 	private renderCellBar() {
 		const active = this.active;
 		const text = active ? cellText(this.rows[active.r]?.[active.c] ?? "") : "";
+		const result = active && isFormula(text) ? this.computed.get(cellKey(active.r, active.c)) : undefined;
 		return (
 			<div class="adc-sheet-editor__cellbar">
 				<span class="adc-sheet-editor__cellref">{active ? `${columnLetter(active.c)}${active.r + 1}` : "—"}</span>
@@ -528,29 +654,116 @@ export class AdcSheetEditor {
 					class="adc-sheet-editor__cellinput"
 					value={text}
 					disabled={!active}
-					placeholder={active ? "" : "Seleccioná una celda"}
-					aria-label="Valor de la celda activa"
+					placeholder={active ? "Escribí un valor, o = para una fórmula" : "Seleccioná una celda"}
+					aria-label="Contenido de la celda activa"
+					ref={(el) => (this.cellBarInput = el)}
+					onFocus={() => (this.editing = active ? { ...active } : null)}
+					onBlur={() => (this.editing = null)}
 					onInput={(ev: InputEvent) => {
 						if (active) this.setCell(active.r, active.c, (ev.target as HTMLInputElement).value);
 					}}
 				/>
+				{result && (
+					<span class={`adc-sheet-editor__result ${result.error ? "adc-sheet-editor__result--error" : ""}`} title="Resultado">
+						= {result.text}
+					</span>
+				)}
 			</div>
 		);
 	}
 
 	private renderCell(r: number, c: number, cell: SheetCell) {
-		const text = cellText(cell);
-		if (this.readonly) {
-			return <span class="block text-sm text-text whitespace-pre-wrap">{text}</span>;
+		const raw = cellText(cell);
+		const computed = this.computed.get(cellKey(r, c));
+		const errorClass = computed?.error ? " adc-sheet-editor__cell--error" : "";
+
+		// Celda ocupada por el derrame de otra fórmula: se muestra, no se edita
+		// (para recuperarla alcanza con borrar la fórmula que la llena).
+		if (computed?.kind === "spill") {
+			return (
+				<span class="adc-sheet-editor__spill" title="Resultado derramado por una fórmula de arriba">
+					{computed.text}
+				</span>
+			);
 		}
+		if (this.readonly) {
+			return <span class={`block text-sm text-text whitespace-pre-wrap${errorClass}`}>{computed?.text ?? raw}</span>;
+		}
+		// Mientras se teclea se ve la fórmula; con el foco afuera, su resultado.
+		const editing = this.editing?.r === r && this.editing?.c === c;
 		return (
 			<input
-				class="w-full bg-transparent text-inherit font-inherit outline-none"
-				value={text}
-				onFocus={() => (this.active = { r, c })}
+				class={`w-full bg-transparent text-inherit font-inherit outline-none${errorClass}`}
+				value={editing || !computed ? raw : computed.text}
+				title={computed ? raw : undefined}
+				onFocus={() => {
+					this.active = { r, c };
+					this.editing = { r, c };
+				}}
+				onBlur={() => (this.editing = null)}
 				onInput={(ev: InputEvent) => this.setCell(r, c, (ev.target as HTMLInputElement).value)}
 				aria-label={`${columnLetter(c)}${r + 1}`}
 			/>
+		);
+	}
+
+	/**
+	 * Pin `+` sobre el borde de un rótulo: inserta una fila/columna justo en ese
+	 * límite. Aparece al pasar el mouse por el rótulo, como en cualquier planilla.
+	 */
+	private renderAddPin(axis: "row" | "col", at: number, side: "start" | "end") {
+		const label = axis === "row" ? `Insertar fila ${at + 1}` : `Insertar columna ${columnLetter(at)}`;
+		return (
+			<button
+				key={`add-${side}`}
+				type="button"
+				class={`adc-sheet-editor__add adc-sheet-editor__add--${axis} adc-sheet-editor__add--${side}`}
+				title={label}
+				aria-label={label}
+				onClick={(ev: MouseEvent) => {
+					ev.stopPropagation();
+					if (axis === "row") this.insertRow(at);
+					else this.insertColumn(at);
+				}}
+			>
+				+
+			</button>
+		);
+	}
+
+	private renderColumnHead(c: number) {
+		return (
+			<th key={`col-${c}`} class="adc-sheet-editor__head" {...this.cellContextMenu(0, c, "col")}>
+				{columnLetter(c)}
+				{!this.readonly && [
+					<button
+						key="kill"
+						type="button"
+						class="adc-sheet-editor__kill"
+						title={`Eliminar columna ${columnLetter(c)}`}
+						onClick={() => this.removeColumn(c)}
+					>
+						×
+					</button>,
+					this.renderAddPin("col", c, "start"),
+					this.renderAddPin("col", c + 1, "end"),
+				]}
+			</th>
+		);
+	}
+
+	private renderRowHead(r: number) {
+		return (
+			<th class="adc-sheet-editor__head adc-sheet-editor__rowhead" {...this.cellContextMenu(r, 0, "row")}>
+				{r + 1}
+				{!this.readonly && [
+					<button key="kill" type="button" class="adc-sheet-editor__kill" title={`Eliminar fila ${r + 1}`} onClick={() => this.removeRow(r)}>
+						×
+					</button>,
+					this.renderAddPin("row", r, "start"),
+					this.renderAddPin("row", r + 1, "end"),
+				]}
+			</th>
 		);
 	}
 
@@ -564,34 +777,13 @@ export class AdcSheetEditor {
 						<th class="adc-sheet-editor__head adc-sheet-editor__rowhead">
 							<span class="sr-only">Número de fila</span>
 						</th>
-						{Array.from({ length: colCount }, (_, c) => (
-							<th key={`col-${c}`} class="adc-sheet-editor__head" {...this.cellContextMenu(0, c, "col")}>
-								{columnLetter(c)}
-								{!this.readonly && (
-									<button
-										type="button"
-										class="adc-sheet-editor__kill"
-										title={`Eliminar columna ${columnLetter(c)}`}
-										onClick={() => this.removeColumn(c)}
-									>
-										×
-									</button>
-								)}
-							</th>
-						))}
+						{Array.from({ length: colCount }, (_, c) => this.renderColumnHead(c))}
 					</tr>
 				</thead>
 				<tbody>
 					{this.rows.map((row, r) => (
 						<tr key={`row-${r}`} class={r === 0 ? "adc-sheet-editor__headrow" : ""}>
-							<th class="adc-sheet-editor__head adc-sheet-editor__rowhead" {...this.cellContextMenu(r, 0, "row")}>
-								{r + 1}
-								{!this.readonly && (
-									<button type="button" class="adc-sheet-editor__kill" title={`Eliminar fila ${r + 1}`} onClick={() => this.removeRow(r)}>
-										×
-									</button>
-								)}
-							</th>
+							{this.renderRowHead(r)}
 							{row.map((cell, c) => (
 								<td key={`cell-${r}-${c}`} class="adc-blocks-editor__table-cell" {...this.cellContextMenu(r, c)}>
 									{this.renderCell(r, c, cell)}

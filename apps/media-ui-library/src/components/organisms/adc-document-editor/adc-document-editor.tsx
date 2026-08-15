@@ -1,4 +1,4 @@
-import { Component, Element, Event, Host, Prop, State, Watch, type EventEmitter } from "@stencil/core";
+import { Component, Element, Event, Host, Listen, Prop, State, Watch, type EventEmitter } from "@stencil/core";
 import type { AdcDocument, DocumentBlock, PageSetup, PageSizeId } from "@common/types/adc-document/index.js";
 import type { InsertBlockKind } from "../adc-blocks-editor/adc-blocks-editor";
 import type { MenuBarItem, MenuBarMenu } from "../../molecules/adc-menu-bar/adc-menu-bar";
@@ -344,10 +344,13 @@ export class AdcDocumentEditor {
 		else downloadText(content, `${this.title.trim() || "documento"}.${format.ext}`, format.mime);
 	}
 
-	/** Formatos aplicables al documento actual (ej: CSV solo si hay tablas). */
+	/**
+	 * Formatos aplicables al documento actual (ej: CSV solo si hay tablas).
+	 * Imprimir queda afuera: tiene su propio item, arriba en el mismo menú.
+	 */
 	private availableExports(): DocumentExportFormat[] {
 		const doc = this.currentDoc();
-		return DOCUMENT_EXPORT_FORMATS.filter((format) => format.serialize(doc) !== null);
+		return DOCUMENT_EXPORT_FORMATS.filter((format) => !format.print && format.serialize(doc) !== null);
 	}
 
 	// ── Menús ───────────────────────────────────────────────────────────────
@@ -356,6 +359,7 @@ export class AdcDocumentEditor {
 		return [
 			{ label: "Configuración de página…", action: "file:page-setup" },
 			{ label: "Importar archivo…", action: "file:import" },
+			{ label: "Imprimir… (Ctrl+P)", action: "export:print" },
 			{ label: "Exportar…", children: this.availableExports().map((f) => ({ label: f.label, action: `export:${f.id}` })) },
 		];
 	}
@@ -422,6 +426,21 @@ export class AdcDocumentEditor {
 			this.undo();
 		}
 	};
+
+	/**
+	 * Ctrl/Cmd+P imprime el documento con su configuración de página en vez de
+	 * la aplicación entera. Escucha en el documento y no en el lienzo: el atajo
+	 * tiene que andar aunque el foco esté en la barra del host (botón de
+	 * guardar, título), que es donde queda después de cualquier click.
+	 */
+	@Listen("keydown", { target: "document" })
+	handlePrintShortcut(ev: KeyboardEvent) {
+		if (!(ev.ctrlKey || ev.metaKey) || ev.key.toLowerCase() !== "p") return;
+		const format = DOCUMENT_EXPORT_FORMATS.find((candidate) => candidate.print);
+		if (!format) return;
+		ev.preventDefault();
+		this.exportAs(format);
+	}
 
 	// ── Navegación ──────────────────────────────────────────────────────────
 
