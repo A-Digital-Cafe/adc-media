@@ -188,7 +188,7 @@ export class AdcBlocksPropertyEditor {
 				aria-label={label}
 				title={label}
 				disabled={opts.disabled}
-				class={`w-7 h-7 rounded-md border border-surface-alt bg-surface text-sm flex items-center justify-center transition-opacity hover:bg-surface-alt disabled:opacity-30 ${opts.danger ? "text-danger" : ""}`}
+				class={`w-7 h-7 rounded-md border border-surface-alt bg-surface text-sm flex items-center justify-center transition-opacity hover:bg-surface-alt disabled:opacity-30 ${opts.danger ? "text-tdanger" : ""}`}
 				onClick={onClick}
 			>
 				{glyph}
@@ -289,7 +289,7 @@ export class AdcBlocksPropertyEditor {
 							>
 								Aplicar JSON
 							</button>
-							{this.parseError && <span class="text-danger text-xs">JSON inválido: {this.parseError}</span>}
+							{this.parseError && <span class="text-tdanger text-xs">JSON inválido: {this.parseError}</span>}
 						</div>
 					</div>
 				)}

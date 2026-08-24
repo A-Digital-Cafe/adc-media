@@ -310,7 +310,7 @@ export const BlockPropertyFields: FunctionalComponent<{ block: Block; onPatch: (
 		case "divider":
 			return <p class="text-muted text-sm">Este bloque no tiene propiedades configurables.</p>;
 		default:
-			return <p class="text-danger text-sm">Tipo de bloque desconocido.</p>;
+			return <p class="text-tdanger text-sm">Tipo de bloque desconocido.</p>;
 	}
 };
 

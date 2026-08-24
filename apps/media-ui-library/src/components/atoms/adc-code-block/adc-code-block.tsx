@@ -33,7 +33,7 @@ export class AdcCodeBlock {
 				class="bg-alt text-text rounded-xxl px-6 pb-2 pt-4 ml-8 overflow-x-auto text-md mb-2 font-mono break-normal xl:max-w-[80vw]"
 				aria-label={this.ariaLabel}
 			>
-				{this.language && <figcaption class="text-blue-800">[{this.language}]</figcaption>}
+				{this.language && <figcaption class="text-tinfo">[{this.language}]</figcaption>}
 				<code class={codeClass} innerHTML={highlightedContent}></code>
 			</figure>
 		);

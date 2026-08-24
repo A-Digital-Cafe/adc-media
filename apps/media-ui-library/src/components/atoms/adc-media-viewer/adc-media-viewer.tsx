@@ -50,7 +50,7 @@ export class AdcMediaViewer {
 
 	render() {
 		if (this.failed) {
-			return <p class="text-danger text-sm py-8 text-center">{this.errorLabel ?? this.fileName ?? ""}</p>;
+			return <p class="text-tdanger text-sm py-8 text-center">{this.errorLabel ?? this.fileName ?? ""}</p>;
 		}
 		switch (this.mediaType) {
 			case "video":
