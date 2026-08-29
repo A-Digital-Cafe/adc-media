@@ -12,6 +12,7 @@ import {
 	topLevelBlockOf,
 	placeCaretAtEnd,
 	marksAtSelection,
+	lineStyleAtSelection,
 } from "./blocks-editor-dom.js";
 
 /**
@@ -43,6 +44,17 @@ type TableBlock = Extract<EditorBlock, { type: "table" } | { type: "table-x" }>;
 
 /** Contenedor con margen propio: agrupa otros bloques dentro del mismo flujo editable. */
 type MarginBoxBlock = Extract<EditorBlock, { type: "margin-box" }>;
+
+/** Estilo de línea que ofrece el selector unificado de la barra (párrafo o títulos). */
+type LineStyle = "p" | "h2" | "h3" | "h4";
+
+/** Rótulos del selector: la inicial que va en el botón y el nombre del estilo. */
+const LINE_STYLES: Array<{ value: LineStyle; initial: string; label: string }> = [
+	{ value: "p", initial: "P", label: "Párrafo" },
+	{ value: "h2", initial: "H", label: "Título 1" },
+	{ value: "h3", initial: "H", label: "Título 2" },
+	{ value: "h4", initial: "H", label: "Título 3" },
+];
 
 /** Paso (cm) al ajustar el margen de un bloque con margen, y sus topes. */
 const MARGIN_STEP_CM = 0.5;
@@ -83,7 +95,9 @@ export class AdcBlocksEditor {
 	@State() activeMarks: { bold: boolean; italic: boolean; code: boolean } = { bold: false, italic: false, code: false };
 	@State() charCount: number = 0;
 	@State() blockMenuOpen: boolean = false;
-	@State() headingMenuOpen: boolean = false;
+	@State() lineMenuOpen: boolean = false;
+	/** Estilo del bloque donde está el caret: es el que rotula el botón del selector. */
+	@State() lineStyle: LineStyle = "p";
 	@State() listMenuOpen: boolean = false;
 	@State() linkMenuOpen: boolean = false;
 	@State() linkDraft: string = "";
@@ -603,9 +617,10 @@ export class AdcBlocksEditor {
 		return !!this.editorEl && this.editorEl.contains(range.commonAncestorContainer);
 	}
 
-	private updateActiveMarks() {
-		this.activeMarks =
-			this.isSelectionInsideEditor() && this.editorEl ? marksAtSelection(this.editorEl) : { bold: false, italic: false, code: false };
+	private updateActiveFormat() {
+		const inside = this.isSelectionInsideEditor() && this.editorEl;
+		this.activeMarks = inside ? marksAtSelection(this.editorEl!) : { bold: false, italic: false, code: false };
+		this.lineStyle = inside ? lineStyleAtSelection(this.editorEl!) : "p";
 	}
 
 	private execMark(mark: "bold" | "italic" | "code") {
@@ -616,7 +631,7 @@ export class AdcBlocksEditor {
 		} else {
 			this.toggleInlineMark(mark);
 		}
-		this.updateActiveMarks();
+		this.updateActiveFormat();
 		this.emit();
 	}
 
@@ -625,7 +640,7 @@ export class AdcBlocksEditor {
 	/** Abre el popover de enlace, guardando la selección actual y prefijando el href existente. */
 	private openLinkMenu() {
 		if (!this.editorEl) return;
-		this.headingMenuOpen = false;
+		this.lineMenuOpen = false;
 		this.listMenuOpen = false;
 		this.blockMenuOpen = false;
 		const sel = globalThis.getSelection();
@@ -831,7 +846,7 @@ export class AdcBlocksEditor {
 	private readonly handleInput = () => {
 		// Detectar atajos markdown justo después de espacio (e.g. "* ", "1. ", "# ").
 		this.maybeApplyMarkdownShortcut();
-		this.updateActiveMarks();
+		this.updateActiveFormat();
 		this.emit();
 	};
 
@@ -856,7 +871,7 @@ export class AdcBlocksEditor {
 
 	private readonly handleSelectionChange = () => {
 		this.rememberCaret();
-		this.updateActiveMarks();
+		this.updateActiveFormat();
 	};
 
 	/** Guarda el último rango dentro del editor: los menús del host roban el foco. */
@@ -959,6 +974,9 @@ export class AdcBlocksEditor {
 		// Restaurar caret al primer hijo nuevo
 		const first = this.editorEl.children[Math.min(startIdx, endIdx)] as HTMLElement | undefined;
 		if (first) placeCaretAtEnd(first);
+		// El caret se movió por código: nadie va a disparar keyup/mouseup, y sin esto el
+		// rótulo del selector de estilo seguiría mostrando el bloque anterior.
+		this.updateActiveFormat();
 	}
 
 	/**
@@ -1293,9 +1311,12 @@ export class AdcBlocksEditor {
 		onClick: () => void;
 		children: any;
 		disabled?: boolean;
+		/** Botón con rótulo en vez de ícono: crece con el texto en lugar de ser cuadrado. */
+		wide?: boolean;
 	}) {
-		const base =
-			"inline-flex items-center justify-center w-8 h-8 rounded-md text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer";
+		const base = `inline-flex items-center justify-center ${
+			opts.wide ? "px-2 gap-1 max-w-40" : "w-8"
+		} h-8 rounded-md text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`;
 		const state = opts.active
 			? "bg-primary text-onPrimary shadow-sm hover:bg-primary"
 			: "bg-transparent text-text hover:bg-alt hover:text-text active:bg-alt/70";
@@ -1327,11 +1348,7 @@ export class AdcBlocksEditor {
 			{ key: "callout", label: "Destacado", icon: "!" },
 			{ key: "divider", label: "Divisor", icon: "—" },
 		];
-		const headingLevels: Array<{ level: 2 | 3 | 4; label: string }> = [
-			{ level: 2, label: "H1" },
-			{ level: 3, label: "H2" },
-			{ level: 4, label: "H3" },
-		];
+		const current = LINE_STYLES.find((style) => style.value === this.lineStyle) ?? LINE_STYLES[0];
 		return (
 			<div class={`flex flex-col gap-0 ${this.bare ? "" : "bg-surface rounded-xxl border border-alt"}`}>
 				<div
@@ -1419,42 +1436,47 @@ export class AdcBlocksEditor {
 
 					<fieldset class="inline-flex items-center gap-0.5 border-0 p-0 m-0 min-w-0">
 						<legend class="sr-only">Estructura de línea</legend>
-						{this.renderToolButton({
-							label: "Párrafo",
-							onClick: () => this.transformCurrentBlock("p"),
-							children: <span class="font-semibold text-xs">P</span>,
-						})}
 						<div class="relative inline-flex">
 							{this.renderToolButton({
-								label: "Título",
-								active: this.headingMenuOpen,
+								label: `Estilo de línea: ${current.label}`,
+								active: this.lineMenuOpen,
+								wide: true,
 								onClick: () => {
-									this.headingMenuOpen = !this.headingMenuOpen;
+									this.lineMenuOpen = !this.lineMenuOpen;
 									this.listMenuOpen = false;
 									this.blockMenuOpen = false;
 									this.linkMenuOpen = false;
 								},
-								children: <span class="font-bold text-xs">H</span>,
+								children: (
+									<span class="inline-flex items-center gap-1 text-xs">
+										<span class="font-bold">{current.initial}</span>
+										<span class="truncate">- {current.label}</span>
+									</span>
+								),
 							})}
-							{this.headingMenuOpen && (
+							{this.lineMenuOpen && (
 								<div
-									class="absolute top-full left-0 mt-1 z-50 flex flex-col bg-surface border border-alt rounded-md shadow-cozy min-w-32"
+									class="absolute top-full left-0 mt-1 z-50 flex flex-col bg-surface border border-alt rounded-md shadow-cozy min-w-40"
 									role="menu"
-									aria-label="Niveles de título"
+									aria-label="Estilo de línea"
 								>
-									{headingLevels.map((hl) => (
+									{LINE_STYLES.map((style) => (
 										<button
-											key={`h${hl.level}`}
+											key={style.value}
 											type="button"
-											class="flex items-center gap-2 px-3 py-1.5 text-sm text-text hover:bg-alt text-left cursor-pointer"
+											class={`flex items-center gap-2 px-3 py-1.5 text-sm text-left cursor-pointer hover:bg-alt ${
+												style.value === this.lineStyle ? "text-primary" : "text-text"
+											}`}
 											onMouseDown={(ev) => ev.preventDefault()}
 											onClick={() => {
-												this.transformCurrentBlock(`h${hl.level}`);
-												this.headingMenuOpen = false;
+												this.transformCurrentBlock(style.value);
+												this.lineMenuOpen = false;
 											}}
 											role="menuitem"
+											aria-checked={style.value === this.lineStyle ? "true" : "false"}
 										>
-											<span class="font-bold w-6">{hl.label}</span>
+											<span class="font-bold w-4 text-center">{style.initial}</span>
+											<span>{style.label}</span>
 										</button>
 									))}
 								</div>
@@ -1466,7 +1488,7 @@ export class AdcBlocksEditor {
 								active: this.listMenuOpen,
 								onClick: () => {
 									this.listMenuOpen = !this.listMenuOpen;
-									this.headingMenuOpen = false;
+									this.lineMenuOpen = false;
 									this.blockMenuOpen = false;
 									this.linkMenuOpen = false;
 								},
@@ -1527,7 +1549,7 @@ export class AdcBlocksEditor {
 							active: this.blockMenuOpen,
 							onClick: () => {
 								this.blockMenuOpen = !this.blockMenuOpen;
-								this.headingMenuOpen = false;
+								this.lineMenuOpen = false;
 								this.listMenuOpen = false;
 								this.linkMenuOpen = false;
 							},

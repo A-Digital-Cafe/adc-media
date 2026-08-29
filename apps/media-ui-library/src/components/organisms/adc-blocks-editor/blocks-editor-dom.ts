@@ -160,6 +160,19 @@ export function topLevelBlockOf(editorEl: HTMLElement, node: Node): HTMLElement 
 	return current?.nodeType === Node.ELEMENT_NODE ? (current as HTMLElement) : null;
 }
 
+/**
+ * Estilo de línea del bloque donde está el caret. Listas y checkboxes no tienen
+ * uno propio: se informan como párrafo, que es en lo que los convierte el menú
+ * (y es lo que el botón unificado ofrece cambiar).
+ */
+export function lineStyleAtSelection(editorEl: HTMLElement): "p" | "h2" | "h3" | "h4" {
+	const sel = globalThis.getSelection();
+	if (!sel || sel.rangeCount === 0) return "p";
+	const block = topLevelBlockOf(editorEl, sel.getRangeAt(0).startContainer);
+	const tag = block?.tagName.toLowerCase();
+	return tag === "h2" || tag === "h3" || tag === "h4" ? tag : "p";
+}
+
 /** Marks activos (bold/italic/code) según los ancestros del inicio de la selección. */
 export function marksAtSelection(editorEl: HTMLElement): { bold: boolean; italic: boolean; code: boolean } {
 	const marks = { bold: false, italic: false, code: false };
