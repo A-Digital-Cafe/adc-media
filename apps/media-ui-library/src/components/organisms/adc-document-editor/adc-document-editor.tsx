@@ -36,6 +36,8 @@ const VIEW_LABELS: Record<DocumentView, string> = {
 	single: "Una página",
 };
 
+const VIEW_OPTIONS = (Object.keys(VIEW_LABELS) as DocumentView[]).map((mode) => ({ value: mode, label: VIEW_LABELS[mode] }));
+
 /** Menú "Insertar", agrupado por categoría (tabla y salto de página viven solo acá). */
 const INSERT_MENU: MenuBarItem[] = [
 	{
@@ -492,17 +494,13 @@ export class AdcDocumentEditor {
 					value={this.title}
 					onInput={(ev: InputEvent) => this.applyEdit(this.blocks, (ev.target as HTMLInputElement).value)}
 				/>
-				<select
-					class="adc-doc__select"
-					aria-label="Vista del documento"
-					onChange={(ev: globalThis.Event) => (this.currentView = (ev.target as HTMLSelectElement).value as DocumentView)}
-				>
-					{(Object.keys(VIEW_LABELS) as DocumentView[]).map((mode) => (
-						<option key={mode} value={mode} selected={this.currentView === mode}>
-							{VIEW_LABELS[mode]}
-						</option>
-					))}
-				</select>
+				<div class="adc-doc__view-select">
+					<adc-select
+						value={this.currentView}
+						options={VIEW_OPTIONS}
+						onAdcChange={(ev: CustomEvent<string>) => (this.currentView = ev.detail as DocumentView)}
+					></adc-select>
+				</div>
 				<span class="text-xs text-muted whitespace-nowrap">
 					{words} palabra{words === 1 ? "" : "s"} · {pages} pág.
 				</span>

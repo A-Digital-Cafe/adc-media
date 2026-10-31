@@ -5,10 +5,14 @@
  */
 
 /* La base de la barra (`.adc-editor-toolbar`) vive en adc-menu-bar.css: es la
-   misma barra que usa el editor de hojas de cálculo. */
+   misma barra que usa el editor de hojas de cálculo. Es sticky con z-index, o sea
+   su propio contexto de apilado: el menú del `adc-select` queda atrapado adentro y
+   su z-index no compite con las otras barras. Por eso el 40 va acá y no en el
+   select — deja la fila por encima del editor de bloques (z-30) y de los menús (z-20). */
 .adc-doc__toolbar--title {
 	border-bottom: none;
 	padding-bottom: 0;
+	z-index: 40;
 }
 
 .adc-doc__title {
@@ -26,6 +30,11 @@
 
 .adc-doc__title:focus {
 	background: var(--c-surface, rgba(0, 0, 0, 0.06));
+}
+
+.adc-doc__view-select {
+	width: 8rem;
+	flex-shrink: 0;
 }
 
 .adc-doc__select {

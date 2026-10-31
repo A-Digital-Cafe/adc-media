@@ -1,4 +1,4 @@
-import { Component, Prop, Event, EventEmitter, Method, State, Watch, Element } from "@stencil/core";
+import { Component, Prop, Event, EventEmitter, Method, State, Watch, Element, Listen } from "@stencil/core";
 import type { BlockOf } from "../adc-blocks-renderer/adc-blocks-renderer";
 import type { DocumentBlock } from "@common/types/adc-document/index.js";
 import { registerBlocksClipboard, type ClipboardBlocksPayload } from "../../../../utils/blocks-clipboard.js";
@@ -122,6 +122,24 @@ export class AdcBlocksEditor {
 	private linkDraftText: string = "";
 	/** Último caret conocido dentro del editor (para insertar desde menús externos). */
 	private lastRange: Range | null = null;
+	/** Contenedor (disparador + panel) de cada menú propio, para cerrarlo al clickear afuera. */
+	private lineMenuRootEl: HTMLElement | null = null;
+	private listMenuRootEl: HTMLElement | null = null;
+	private blockMenuRootEl: HTMLElement | null = null;
+	private linkMenuRootEl: HTMLElement | null = null;
+
+	/**
+	 * Cierra los menús propios (estilo de línea, lista, insertar bloque, enlace) al
+	 * clickear afuera de su disparador+panel — mismo criterio que `adc-select`.
+	 */
+	@Listen("pointerdown", { target: "document", capture: true })
+	handleOutsidePointer(ev: Event) {
+		const target = ev.target as Node;
+		if (this.lineMenuOpen && !this.lineMenuRootEl?.contains(target)) this.lineMenuOpen = false;
+		if (this.listMenuOpen && !this.listMenuRootEl?.contains(target)) this.listMenuOpen = false;
+		if (this.blockMenuOpen && !this.blockMenuRootEl?.contains(target)) this.blockMenuOpen = false;
+		if (this.linkMenuOpen && !this.linkMenuRootEl?.contains(target)) this.linkMenuOpen = false;
+	}
 
 	componentDidLoad() {
 		this.syncDomFromBlocks();
@@ -1313,9 +1331,12 @@ export class AdcBlocksEditor {
 		disabled?: boolean;
 		/** Botón con rótulo en vez de ícono: crece con el texto en lugar de ser cuadrado. */
 		wide?: boolean;
+		/** Abre un menú de opciones en vez de alternar un estado: agrega el caret que lo distingue. */
+		menu?: boolean;
 	}) {
+		const wide = opts.wide || opts.menu;
 		const base = `inline-flex items-center justify-center ${
-			opts.wide ? "px-2 gap-1 max-w-40" : "w-8"
+			wide ? "px-2 gap-1 max-w-40" : "w-8"
 		} h-8 rounded-md text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`;
 		const state = opts.active
 			? "bg-primary text-onPrimary shadow-sm hover:bg-primary"
@@ -1330,10 +1351,16 @@ export class AdcBlocksEditor {
 				onClick={opts.onClick}
 				disabled={opts.disabled || this.disabled}
 				aria-pressed={opts.active ? "true" : "false"}
+				aria-haspopup={opts.menu ? "menu" : undefined}
 				aria-label={opts.label}
 				title={title}
 			>
 				{opts.children}
+				{opts.menu && (
+					<span class="ml-0.5 text-[0.55rem] leading-none opacity-60" aria-hidden="true">
+						▾
+					</span>
+				)}
 			</button>
 		);
 	}
@@ -1379,7 +1406,7 @@ export class AdcBlocksEditor {
 							onClick: () => this.execMark("code"),
 							children: <span class="font-mono text-xs">{"</>"}</span>,
 						})}
-						<div class="relative inline-flex">
+						<div class="relative inline-flex" ref={(el) => (this.linkMenuRootEl = el ?? null)}>
 							{this.renderToolButton({
 								label: "Enlace",
 								shortcut: "Ctrl+K",
@@ -1436,11 +1463,12 @@ export class AdcBlocksEditor {
 
 					<fieldset class="inline-flex items-center gap-0.5 border-0 p-0 m-0 min-w-0">
 						<legend class="sr-only">Estructura de línea</legend>
-						<div class="relative inline-flex">
+						<div class="relative inline-flex" ref={(el) => (this.lineMenuRootEl = el ?? null)}>
 							{this.renderToolButton({
 								label: `Estilo de línea: ${current.label}`,
 								active: this.lineMenuOpen,
 								wide: true,
+								menu: true,
 								onClick: () => {
 									this.lineMenuOpen = !this.lineMenuOpen;
 									this.listMenuOpen = false;
@@ -1482,10 +1510,11 @@ export class AdcBlocksEditor {
 								</div>
 							)}
 						</div>
-						<div class="relative inline-flex">
+						<div class="relative inline-flex" ref={(el) => (this.listMenuRootEl = el ?? null)}>
 							{this.renderToolButton({
 								label: "Lista",
 								active: this.listMenuOpen,
+								menu: true,
 								onClick: () => {
 									this.listMenuOpen = !this.listMenuOpen;
 									this.lineMenuOpen = false;
@@ -1542,11 +1571,15 @@ export class AdcBlocksEditor {
 
 					<span class="w-px h-5 bg-alt mx-1" aria-hidden="true" />
 
-					<fieldset class="inline-flex items-center gap-0.5 relative border-0 p-0 m-0 min-w-0">
+					<fieldset
+						class="inline-flex items-center gap-0.5 relative border-0 p-0 m-0 min-w-0"
+						ref={(el) => (this.blockMenuRootEl = el ?? null)}
+					>
 						<legend class="sr-only">Insertar bloque</legend>
 						{this.renderToolButton({
 							label: "Insertar bloque",
 							active: this.blockMenuOpen,
+							menu: true,
 							onClick: () => {
 								this.blockMenuOpen = !this.blockMenuOpen;
 								this.lineMenuOpen = false;
